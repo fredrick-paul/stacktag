@@ -80,3 +80,76 @@
   { recipient: principal }
   { ids: (list 50 uint) }
 )
+
+;; Variables
+
+;; Counter for auto-incrementing IDs
+(define-data-var last-id uint u0)
+
+;; Internal Functions
+
+(define-private (add-id-to-principal-list
+    (user principal)
+    (id uint)
+  )
+  (let (
+      (current-list-data (default-to { ids: (list) } (map-get? tags-by-creator { creator: user })))
+      (current-list (get ids current-list-data))
+      (new-list (unwrap! (as-max-len? (append current-list id) u50) current-list))
+    )
+    (begin
+      (map-set tags-by-creator { creator: user } { ids: new-list })
+      new-list
+    )
+  )
+)
+
+;; Check if current block height is past the expiration
+(define-private (is-expired (expires-at uint))
+  (>= stacks-block-height expires-at)
+)
+
+;; Read-Only Functions
+
+;; Get the current ID counter
+(define-read-only (get-last-id)
+  (ok (var-get last-id))
+)
+
+;; Get details of a specific PayTag
+(define-read-only (get-pay-tag (id uint))
+  (match (map-get? pay-tags { id: id })
+    entry (ok entry)
+    (err ERR-NOT-FOUND)
+  )
+)
+
+;; Get IDs of all tags created by a principal
+(define-read-only (get-creator-tags (creator principal))
+  (match (map-get? tags-by-creator { creator: creator })
+    entry (ok (get ids entry))
+    (ok (list))
+  )
+)
+
+;; Get IDs of all tags where principal is recipient
+(define-read-only (get-recipient-tags (recipient principal))
+  (match (map-get? tags-by-recipient { recipient: recipient })
+    entry (ok (get ids entry))
+    (ok (list))
+  )
+)
+
+;; Check if a tag is expired but not marked as expired yet
+(define-read-only (check-tag-expired (id uint))
+  (match (map-get? pay-tags { id: id })
+    tag (if (and
+        (is-eq (get state tag) STATE-PENDING)
+        (is-expired (get expires-at tag))
+      )
+      (ok true)
+      (ok false)
+    )
+    (err ERR-NOT-FOUND)
+  )
+)
